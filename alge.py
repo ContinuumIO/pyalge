@@ -1,36 +1,10 @@
 """
 PyAlge
 
-(Algae mascot)
+Provides pattern matching through the "Case" class and (minimal support of)
+algebraic data type (ADT).
 
-Inspired by PyAlgebraicDataTypes for algebraic data types (ADT) and pattern
-matching.
-However, PyAlgebraicDataTypes is Py3.3 only and I (sklam) think that I can
-do pattern matching in a simpler fashion (no metaclasses, eval/exec, ...).
-
-Why?
-----
-
-I wrote compilers and functional pattern matching in functional
-language is a bless; esp, when one compare to the visitor pattern in Python.
-Duck-typing is nice for loosely coupled components.  But compiler IR and its
-transformations are high cohesion components.  It is fine or even necessary
-for high cohesion components to be coupled in the type-domain so that one can
-match/dispatch on type information and type structures.
-
-This library shall allow one to express abstract semantic information in the
-type-domain through ADT.  Pattern matching allows code logic to be loosely
-attached to types in an extensible manner.  The compiler IR data structure
-should not contain logic.  Logic should be defined in the transformations.
-
-The use of ADT and pattern matching adds structure to code.  They enforces
-integrity of code.  Use ADT to add semantic information.  Pattern matching
-enforces the semantic requirements.
-
-Reference
----------
-
-- https://github.com/benanhalt/PyAlgebraicDataTypes
+ADT are implemented as namedtuple.
 
 """
 
@@ -277,6 +251,7 @@ def of(pat):
     return decor
 
 
+# TODO: it seems we don't really need this
 class Data(object):
     """Algebraic Data Type
     """
