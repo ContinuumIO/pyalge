@@ -25,6 +25,12 @@ class ElseCase(Case):
         return ("Bad", value)
 
 
+class StateCase(Case):
+    @of("Record(c, i)")
+    def record(self, c, i):
+        self.state.value = c + i
+
+
 class TestMyCase(unittest.TestCase):
     def test_nested(self):
         rec = Record(color=Color(red=1, green=2, blue=3), intensity=123)
@@ -59,6 +65,20 @@ class TestElseCase(unittest.TestCase):
         r = Color(1, 2, 3)
         got = ElseCase(r)
         expect = ("Bad", r)
+        self.assertEqual(got, expect)
+
+
+class TestStateCase(unittest.TestCase):
+    def test_matching(self):
+        class State(object):
+            def __init__(self):
+                self.value = 0
+
+        r = Record(1, 2)
+        state = State()
+        StateCase(r, state=state)
+        got = state.value
+        expect = r.color + r.intensity
         self.assertEqual(got, expect)
 
 

@@ -64,12 +64,21 @@ class Case(object):
     Case.  One will use a subclass of Case as a function.
     """
 
-    def __new__(cls, value):
+    def __new__(cls, value, state=None):
+        """
+        Args
+        ----
+        value:
+            object being matched
+        state:
+            mutable internal state accessible as `self.state`
+        """
         if not hasattr(cls, "_case_ofs"):
             # First time running.
             # Prepare dispatch table.
             cls.__prepare()
         obj = object.__new__(cls)
+        obj.state = state
         return obj.__process(value)
 
     @classmethod
@@ -85,7 +94,7 @@ class Case(object):
                 # Order cases by lineno
         cls._case_ofs = zip(*sorted(ofs))[1]
 
-    def __process(self, value):
+    def __process(self, value, state=None):
         """The actual matching/dispatch.
         Returns the result of the match.
         """
@@ -238,7 +247,7 @@ def of(pat):
 
     Args
     ----
-    pat - str
+    pat: str
 
     Patterns are like writing tuples (of tuples (of ...)) for the type
     structure to match against.  Names starting with a lowercase letter are
@@ -280,9 +289,9 @@ def datatype(name, fields):
 
     Args
     ----
-    name - str
+    name: str
         Type name.  Must start with a uppercase letter.
-    fields - sequence of str
+    fields: sequence of str
         Sequence of field names.
     """
     assert name[0].isupper(), "Type name must start with uppercase letter."
