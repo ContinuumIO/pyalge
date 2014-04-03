@@ -1,5 +1,6 @@
 from __future__ import print_function, absolute_import
-from alge import datatype, Case, of, MissingCaseError, LazyCase
+from alge import (datatype, Case, of, MissingCaseError, LazyCase,
+                  _PatternParser, PatternSyntaxError)
 import unittest
 
 Color = datatype('Color', ['red', 'green', 'blue'])
@@ -105,11 +106,43 @@ class TestStateCase(unittest.TestCase):
 
 class TestSearchTree(unittest.TestCase):
     def test_matching(self):
-        tree = Branch(Branch(Node(1), Branch(Node(2,), Node(5))),
+        tree = Branch(Branch(Node(1), Branch(Node(2, ), Node(5))),
                       Branch(Node(3), Node(4)))
         print(tree)
         st = SearchTree(tree, state=3)
         self.assertEqual(3, st.force())
+
+
+class TestParser(unittest.TestCase):
+    def parse(self, pat):
+        parser = _PatternParser(pat, globals())
+        parser.parse()
+        return parser.result
+
+    def test_missing_rpar(self):
+        import tokenize
+
+        pat = "Record(a,"
+        try:
+            self.parse(pat)
+        except tokenize.TokenError:
+            pass
+        else:
+            self.fail("error expected")
+
+    def test_trailing_comma(self):
+        pat = "Record(a,)"
+        self.parse(pat)
+
+    def test_num(self):
+        pat = "Record(1)"
+        try:
+            self.parse(pat)
+        except PatternSyntaxError:
+            pass
+        else:
+            self.fail("error expected")
+
 
 if __name__ == '__main__':
     unittest.main()
