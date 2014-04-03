@@ -12,6 +12,7 @@ from __future__ import print_function, absolute_import
 from collections import namedtuple
 import functools
 import tokenize
+import inspect
 
 
 class MissingCaseError(ValueError):
@@ -19,6 +20,10 @@ class MissingCaseError(ValueError):
 
 
 class PatternSyntaxError(ValueError):
+    pass
+
+
+class PatternContextError(ValueError):
     pass
 
 
@@ -90,9 +95,9 @@ class Case(object):
         raise MissingCaseError(value)
 
 
-class _TypePattern(namedtuple("_TypePattern", ["name", "body"])):
+class _TypePattern(namedtuple("_TypePattern", ["typ", "body"])):
     def match(self, match, input):
-        if type(input).__name__ == self.name:
+        if isinstance(input, self.typ):
             if len(self.body) != len(input):
                 # Insufficient fields
                 return
@@ -125,9 +130,10 @@ class _PatternParser(object):
     we parse once at class creation.
     """
 
-    def __init__(self, pat):
+    def __init__(self, pat, env):
         self.pat = pat
         self.bindings = set()
+        self.env = env
 
         lines = iter(self.pat.split())
         tokens = tokenize.generate_tokens(lambda: next(lines))
@@ -161,7 +167,13 @@ class _PatternParser(object):
             if not self.is_comma():
                 break
         self.expect_rparen()
-        return _TypePattern(typename, body)
+
+        try:
+            typcls = self.env[typename]
+        except KeyError:
+            raise PatternContextError("unknown type reference: %s" % typename)
+        else:
+            return _TypePattern(typcls, body)
 
     def expect_type_or_binding(self):
         name = self.expect_name()
@@ -230,7 +242,11 @@ def of(pat):
     with a underscore '_' is ignored.  Names starting with a uppercase letter
     are type names.
     """
-    parser = _PatternParser(pat)
+
+    # Get globals from caller's frame
+    glbls = inspect.currentframe().f_back.f_globals
+    # Parse pattern
+    parser = _PatternParser(pat, glbls)
     parser.parse()
     matcher = parser.result
 
