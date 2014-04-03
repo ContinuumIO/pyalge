@@ -33,6 +33,13 @@ class NoMatch(object):
     pass
 
 
+def _get_code(func):
+    try:
+        return func.__code__
+    except AttributeError:
+        return func.func_code
+
+
 class Case(object):
     """A case-class is used to describe a pattern matching dispatch logic.
     Each pattern is described as a method with the `of` decorator.
@@ -68,10 +75,10 @@ class Case(object):
         for fd in dir(cls):
             if not fd.startswith('_') and fd != 'otherwise':
                 fn = getattr(cls, fd)
-                firstline = fn._inner.func_code.co_firstlineno
+                firstline = _get_code(fn._inner).co_firstlineno
                 ofs.append((firstline, fn))
                 # Order cases by lineno
-        cls._case_ofs = zip(*sorted(ofs))[1]
+        cls._case_ofs = tuple(zip(*sorted(ofs)))[1]
 
     def __process(self, value, state=None):
         """The actual matching/dispatch.
