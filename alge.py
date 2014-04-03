@@ -265,7 +265,7 @@ class _PatternParser(object):
         token = self.get_token()
         tokty, tokstr = token[:2]
         if tokty != tokenize.NAME:
-            raise PatternSyntaxError("expected name: %r" % tokstr)
+            raise PatternSyntaxError("expected name but got %r" % tokstr)
         return tokstr
 
     def expect_lparen(self):
