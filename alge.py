@@ -110,8 +110,10 @@ class Case(_Common):
         return self.otherwise(self.value)
 
 
+# XXX: this is experimental
 class LazyCase(_Common):
     """For walking a structure lazily.
+
     """
     def __init__(self, value, state=None):
         _prepare(type(self))
@@ -214,6 +216,11 @@ class _PatternParser(object):
         typename = self.expect_name()
         self.result = self.parse_typebody(typename)
 
+    def peek(self):
+        tok = self.get_token()
+        self.putback(tok)
+        return tok
+
     def parse_typebody(self, typename):
         if not typename[0].isupper():
             raise PatternSyntaxError("type name must start with uppercase "
@@ -223,6 +230,8 @@ class _PatternParser(object):
         while True:
             body.append(self.expect_type_or_binding())
             if not self.is_comma():
+                break
+            elif self.peek()[1] == ')':
                 break
         self.expect_rparen()
 
