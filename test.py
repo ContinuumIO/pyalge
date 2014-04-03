@@ -1,5 +1,5 @@
 from __future__ import print_function, absolute_import
-from alge import datatype, Case, of, MissingCaseError
+from alge import datatype, Case, of, MissingCaseError, LazyCase
 import unittest
 
 Color = datatype('Color', ['red', 'green', 'blue'])
@@ -29,6 +29,27 @@ class StateCase(Case):
     @of("Record(c, i)")
     def record(self, c, i):
         self.state.value = c + i
+
+
+Branch = datatype("Branch", ['left', 'right'])
+Node = datatype("Node", ["value"])
+
+
+class SearchTree(LazyCase):
+    @of("Branch(a, b)")
+    def branch(self, a, b):
+        """Search the leftmost subtree first.
+        Then, try the right subtree
+        """
+        print("at", self.value)
+        yield self.recurse(a)
+        yield self.recurse(b)
+
+    @of("Node(x)")
+    def node(self, x):
+        print("at", self.value)
+        if self.state == x:
+            yield x
 
 
 class TestMyCase(unittest.TestCase):
@@ -81,6 +102,14 @@ class TestStateCase(unittest.TestCase):
         expect = r.color + r.intensity
         self.assertEqual(got, expect)
 
+
+class TestSearchTree(unittest.TestCase):
+    def test_matching(self):
+        tree = Branch(Branch(Node(1), Branch(Node(2,), Node(5))),
+                      Branch(Node(3), Node(4)))
+        print(tree)
+        st = SearchTree(tree, state=3)
+        self.assertEqual(3, st.force())
 
 if __name__ == '__main__':
     unittest.main()

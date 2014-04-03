@@ -15,6 +15,9 @@ import tokenize
 import inspect
 
 
+RESERVED = set(['force', 'recurse', 'otherwise'])
+
+
 class MissingCaseError(ValueError):
     pass
 
@@ -40,7 +43,34 @@ def _get_code(func):
         return func.func_code
 
 
-class Case(object):
+def _prepare(cls):
+    """Insert "_case_ofs" attribute to the class
+    """
+    if not hasattr(cls, "_case_ofs"):
+        ofs = []
+        for fd in dir(cls):
+            if not fd.startswith('_') and fd not in RESERVED:
+                fn = getattr(cls, fd)
+                firstline = _get_code(fn._inner).co_firstlineno
+                ofs.append((firstline, fn))
+                # Order cases by lineno
+        cls._case_ofs = tuple(zip(*sorted(ofs)))[1]
+
+
+class _Common(object):
+    def otherwise(self, value):
+        """Default is to raise MissingCaseError exception with `value` as
+        argument.
+
+        Can be overridden.
+        """
+        raise MissingCaseError(value)
+
+    def recurse(self, value):
+        return type(self)(value=value, state=self.state)
+
+
+class Case(_Common):
     """A case-class is used to describe a pattern matching dispatch logic.
     Each pattern is described as a method with the `of` decorator.
 
@@ -59,47 +89,67 @@ class Case(object):
         state:
             mutable internal state accessible as `self.state`
         """
-        if not hasattr(cls, "_case_ofs"):
-            # First time running.
-            # Prepare dispatch table.
-            cls.__prepare()
+        _prepare(cls)
         obj = object.__new__(cls)
         obj.state = state
-        return obj.__process(value)
+        obj.value = value
+        return obj.__process()
 
-    @classmethod
-    def __prepare(cls):
-        """Insert "_case_ofs" attribute to the class
-        """
-        ofs = []
-        for fd in dir(cls):
-            if not fd.startswith('_') and fd != 'otherwise':
-                fn = getattr(cls, fd)
-                firstline = _get_code(fn._inner).co_firstlineno
-                ofs.append((firstline, fn))
-                # Order cases by lineno
-        cls._case_ofs = tuple(zip(*sorted(ofs)))[1]
-
-    def __process(self, value, state=None):
+    def __process(self):
         """The actual matching/dispatch.
         Returns the result of the match.
         """
         ofs = self._case_ofs
         for case in ofs:
-            res = case(self, value)
+            res = case(self)
             if res is not NoMatch:
                 # Matches
                 return res
-                # Run default
-        return self.otherwise(value)
 
-    def otherwise(self, value):
-        """Default is to raise MissingCaseError exception with `value` as
-        argument.
+        # Run default
+        return self.otherwise(self.value)
 
-        Can be overridden.
-        """
-        raise MissingCaseError(value)
+
+class LazyCase(_Common):
+    """For walking a structure lazily.
+    """
+    def __init__(self, value, state=None):
+        _prepare(type(self))
+        self.value = value
+        self.state = state
+
+    def force(self):
+        stack = [self]
+        while stack:
+            tos = stack.pop()
+            res = tos._dispatch(stack)
+            if res is not NoMatch:
+                return res
+
+    def _dispatch(self, stack):
+        ofs = self._case_ofs
+        for case in ofs:
+            res = case(self)
+            if res is not NoMatch:
+                # Matches
+                pending = []
+                for item in res:
+                    if isinstance(item, LazyCase):
+                        pending.append(item)
+                    else:
+                        return item
+                stack.extend(reversed(pending))
+                return NoMatch
+
+        # Run default
+        res = self.otherwise(self.value)
+        pending = []
+        for item in res:
+            if isinstance(item, LazyCase):
+                pending.append(item)
+            else:
+                return item
+        return NoMatch
 
 
 class _TypePattern(namedtuple("_TypePattern", ["typ", "body"])):
@@ -108,6 +158,7 @@ class _TypePattern(namedtuple("_TypePattern", ["typ", "body"])):
             if len(self.body) != len(input):
                 # Insufficient fields
                 return
+
             # Try to match the fields
             for field, fdvalue in zip(self.body, input):
                 m = field.match(_Match(), fdvalue)
@@ -258,11 +309,11 @@ def of(pat):
     matcher = parser.result
 
     def decor(fn):
+        assert fn.__name__ not in RESERVED, "function name is reserved"
         @functools.wraps(fn)
-        def closure(self, value):
-            match = matcher.match(_Match(), value)
+        def closure(self):
+            match = matcher.match(_Match(), self.value)
             if match is not None:
-                self.value = value
                 self.match = match
                 return fn(self, **match.bindings)
             else:
