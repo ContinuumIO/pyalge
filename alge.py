@@ -11,6 +11,7 @@ ADT are implemented as namedtuple.
 from __future__ import print_function, absolute_import
 from collections import namedtuple
 import functools
+import operator
 import tokenize
 import inspect
 
@@ -115,6 +116,7 @@ class LazyCase(_Common):
     """For walking a structure lazily.
 
     """
+
     def __init__(self, value, state=None):
         _prepare(type(self))
         self.value = value
@@ -319,6 +321,7 @@ def of(pat):
 
     def decor(fn):
         assert fn.__name__ not in RESERVED, "function name is reserved"
+
         @functools.wraps(fn)
         def closure(self):
             match = matcher.match(_Match(), self.value)
@@ -334,15 +337,71 @@ def of(pat):
     return decor
 
 
-# TODO: it seems we don't really need this
 class Data(object):
-    """Algebraic Data Type
+    """Mutable record type.
+
+    Behaves like a namedtuple with mutable fields.
     """
-    pass
+
+    def __init__(self, *args, **kws):
+        remaining = set(self._fields_)
+        # Handle *args
+        for k, v in zip(self._fields_, args):
+            remaining.remove(k)
+            setattr(self, k, v)
+
+        # Handle **kws
+        for k, v in kws.items():
+            if k not in remaining:
+                raise AttributeError("redefining %s" % k)
+            else:
+                remaining.remove(k)
+                setattr(self, k, v)
+
+        if remaining:
+            raise AttributeError(
+                "attribute required: %s" % ', '.join(remaining))
+
+    def __iter__(self):
+        lst = [getattr(self, f) for f in self._fields_]
+        return iter(lst)
+
+    def __getitem__(self, num):
+        return getattr(self, self._fields_[num])
+
+    def __setattr__(self, key, value):
+        if key not in self._fields_:
+            raise AttributeError("%s does not have attribute %s" %
+                                 (type(self), key))
+        super(Data, self).__setattr__(key, value)
+
+    def __len__(self):
+        return len(self._fields_)
+
+    def __cmp__(self, other):
+        diff = (cmp(a, b) for a, b in zip(self, other))
+        for c in diff:
+            if c != 0:
+                return c
+        return 0
+
+    def __hash__(self):
+        return functools.reduce(operator.add, map(hash, self))
+
+    def __repr__(self):
+        attrs = ('%s=%r' % (k, v) for k, v in zip(self._fields_, self))
+        return "%s(%s)" % (self._constr_, ', '.join(attrs))
+
+    def __str__(self):
+        attrs = ('%s=%s' % (k, v) for k, v in zip(self._fields_, self))
+        return "%s(%s)" % (self._constr_, ', '.join(attrs))
+
+    def _asdict(self):
+        return dict(zip(self._fields_, self))
 
 
 def datatype(name, fields):
-    """Constructor for algebraic data type.
+    """Constructor for product type.
     Used like `collections.namedtuple`.
 
     Args
@@ -353,6 +412,8 @@ def datatype(name, fields):
         Sequence of field names.
     """
     assert name[0].isupper(), "Type name must start with uppercase letter."
-    tupcls = namedtuple(name, fields)
-    return type(name, (tupcls, Data), {})
+    gl = {"_fields_": fields,
+          "__slots__": fields,
+          "_constr_": name}
+    return type(name, (Data,), gl)
 
