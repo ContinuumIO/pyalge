@@ -14,6 +14,8 @@ import functools
 import operator
 import tokenize
 import inspect
+import struct
+import _alge
 
 
 RESERVED = set(['force', 'recurse', 'otherwise'])
@@ -156,6 +158,69 @@ class LazyCase(_Common):
         return NoMatch
 
 
+CODE_TYPECHECK, CODE_ENTER, CODE_EXIT, CODE_SKIPPED, CODE_CAPTURE = _alge.codes
+
+
+class _TypeCheck(object):
+    __slots__ = 'typeobj'
+
+    def __init__(self, typeobj):
+        self.typeobj = typeobj
+
+    def __repr__(self):
+        return "check(%s)" % (self.typeobj,)
+
+    def codify(self):
+        return [CODE_TYPECHECK, id(self.typeobj)]
+
+    def stackuse(self):
+        return 0
+
+class _Enter(object):
+    __slots__ = "size"
+
+    def __init__(self, size):
+        self.size = size
+
+    def codify(self):
+        return [CODE_ENTER, self.size]
+
+    def stackuse(self):
+        return self.size
+
+
+class _Exit(object):
+    def codify(self):
+        return [CODE_EXIT]
+
+    def stackuse(self):
+        return 0
+
+
+class _Skipped(object):
+    def codify(self):
+        return [CODE_SKIPPED]
+
+    def stackuse(self):
+        return 0
+
+
+class _Capture(object):
+    __slots__ = 'name'
+
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return "capture(%s)" % (self.name,)
+
+    def codify(self):
+        return [CODE_CAPTURE, id(self.name)]
+
+    def stackuse(self):
+        return 0
+
+
 class _TypePattern(namedtuple("_TypePattern", ["typ", "body"])):
     def match(self, match, input):
         if isinstance(input, self.typ):
@@ -172,6 +237,14 @@ class _TypePattern(namedtuple("_TypePattern", ["typ", "body"])):
                     return
             return match
 
+    def gen_match(self):
+        yield _TypeCheck(self.typ)
+        yield _Enter(len(self.body))
+        for field in self.body:
+            for j in field.gen_match():
+                yield j
+        yield _Exit()
+
 
 class _Binding(namedtuple("Binding", ["name"])):
     def match(self, match, input):
@@ -179,10 +252,16 @@ class _Binding(namedtuple("Binding", ["name"])):
         match.bindings[self.name] = input
         return match
 
+    def gen_match(self):
+        yield _Capture(self.name)
+
 
 class _Ignored(object):
     def match(self, match, input):
         return match
+
+    def gen_match(self):
+        yield _Skipped()
 
 
 class _PatternParser(object):
@@ -317,21 +396,31 @@ def of(pat):
     # Parse pattern
     parser = _PatternParser(pat, glbls)
     parser.parse()
-    matcher = parser.result
+
+    codes = []
+    keepalive = tuple(parser.result.gen_match())
+    stacksz = 2
+    for m in keepalive:
+        codes.extend(m.codify())
+        # This will over allocate the stack space
+        # TODO: do this properly
+        stacksz += m.stackuse()
+    codes = tuple(codes)
+    bytecodes = struct.pack('P' * len(codes), *codes)
 
     def decor(fn):
         assert fn.__name__ not in RESERVED, "function name is reserved"
 
         @functools.wraps(fn)
         def closure(self):
-            match = matcher.match(_Match(), self.value)
-            if match is not None:
-                self.match = match
-                return fn(self, **match.bindings)
+            cap = {}
+            if _alge.match(bytecodes, self.value, cap, stacksz):
+                return fn(self, **cap)
             else:
                 return NoMatch
 
         closure._inner = fn
+        closure._keepalive = keepalive
         return closure
 
     return decor
